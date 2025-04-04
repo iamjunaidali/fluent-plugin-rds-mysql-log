@@ -1,0 +1,14 @@
+<source>
+  @type rds_mysql_log
+  access_key_id     XXXXXXXXXXXXXXXXXXXX
+  secret_access_key xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  region eu-central-1
+  db_instance_identifier test-mysql
+  refresh_interval 30
+  tag mysql.log
+  pos_file /tmp/mysql-log-pos.dat
+</source>
+
+<match mysql.log>
+  @type stdout
+</match>
