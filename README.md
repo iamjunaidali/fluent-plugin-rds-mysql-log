@@ -7,7 +7,7 @@ This plugin has been created to deal with audit and error logs of mysql.
 
 ## Installation
 
-    $ fluentd-gem install fluent-plugin-rds-mysql-log
+    $ gem install fluent-plugin-rds-mysql-log
 
 ## AWS ELB Settings
 - settings see: [Mysql Database Log Files](http://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_LogAccess.Concepts.Mysql.html)
@@ -17,7 +17,7 @@ log:
 ```
 SSL_connect returned=1 errno=0 state=SSLv3 read server certificate B: certificate verify failed
 ```
-Do env setting follows:
+Do env settings follows:
 ```
 SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt (If you using amazon linux)
 ```
@@ -40,12 +40,12 @@ SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt (If you using amazon linux)
 </source>
 ```
 
-### Example setting
+### Example settings
 ```config
 <source>
   type rds_mysql_log
   region eu-central-1
-  db_instance_identifier test-postgres
+  db_instance_identifier test-mysql
   access_key_id     XXXXXXXXXXXXXXXXXXXX
   secret_access_key xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   refresh_interval  30
