@@ -79,6 +79,16 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
   def is_audit_logs?
     @pos_info.keys.any? { |log_file_name| log_file_name =~ AUDIT_LOG_PATTERN }
   end
+  
+  def should_track_marker?(log_file_name)
+    base_patterns = [
+      /^audit\/server_audit\.log(\.\d+)?$/,
+      /^general\/mysql-general\.log(\.\d+)?$/,
+      /^error\/mysql-error-running\.log(\.\d+)?$/
+    ]
+  
+    base_patterns.any? { |pattern| log_file_name =~ pattern }
+  end
 
   def get_and_parse_posfile
     begin
@@ -99,12 +109,7 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
 
           pos_match = /^(.+)\t(.+)$/.match(line)
           if pos_match
-            if pos_match[1] =~ AUDIT_LOG_PATTERN
-              pos_info[pos_match[1]] = 0
-            else
-              pos_info[pos_match[1]] = pos_match[2]
-            end
-
+            pos_info[pos_match[1]] = pos_match[2]
             log.debug "log_file: #{pos_match[1]}, marker: #{pos_match[2]}"
           end
         end
@@ -117,39 +122,22 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
     end
   end
 
-  def put_posfile
-    # pos file write
-    begin
-      log.debug "pos file write"
-      File.open(@pos_file, File::WRONLY|File::TRUNC) do |file|
-        file.puts @pos_last_written_timestamp.to_s
-
-        @pos_info.each do |log_file_name, marker|
-          file.puts "#{log_file_name}\t#{marker}"
-        end
-      end
-    rescue => e
-      log.warn "pos file write error occurred: #{e.message}"
-    end
-  end
-
   def get_logfile_list
     begin
       log.debug "get logfile-list from rds: db_instance_identifier=#{@db_instance_identifier}, pos_last_written_timestamp=#{@pos_last_written_timestamp}"
       
-      file_last_written = if is_audit_logs?
-        # Use custom interval for audit logs
-        (Time.now.to_i - @refresh_interval) * 1000
+      if is_audit_logs?
+        @rds.describe_db_log_files(
+          db_instance_identifier: @db_instance_identifier,
+          max_records: 50,
+        )
       else
-        # Use default timestamp for other logs
-        @pos_last_written_timestamp
+        @rds.describe_db_log_files(
+          db_instance_identifier: @db_instance_identifier,
+          file_last_written: @pos_last_written_timestamp,
+          max_records: 50,
+        )
       end
-
-      @rds.describe_db_log_files(
-        db_instance_identifier: @db_instance_identifier,
-        file_last_written: file_last_written,
-        max_records: 10,
-      )
     rescue => e
       log.warn "RDS Client describe_db_log_files error occurred: #{e.message}"
     end
@@ -162,12 +150,8 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
           # save maximum written timestamp value
           @pos_last_written_timestamp = item[:last_written] if @pos_last_written_timestamp < item[:last_written]
 
-          log_file_name = item[:log_file_name]          
-          marker = if is_audit_logs?
-            "0"
-          else
-            @pos_info[log_file_name] || "0"
-          end
+          log_file_name = item[:log_file_name]
+          marker = should_track_marker?(log_file_name) ? @pos_info[log_file_name] || "0" : "0"
 
           log.debug "download log from rds: log_file_name=#{log_file_name}, marker=#{marker}"
           logs = @rds.download_db_log_file_portion(
@@ -180,11 +164,6 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
 
           #emit
           parse_and_emit(raw_records, log_file_name) unless raw_records.nil?
-          
-          # Save new last_written timestamp **only for non-audit logs**
-          unless log_file_name =~ AUDIT_LOG_PATTERN
-            @pos_last_written_timestamp = item[:last_written] if @pos_last_written_timestamp < item[:last_written]
-          end
         end
       end
     rescue => e
@@ -198,7 +177,8 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
     begin
       logs.each do |log|
         # save got line's marker
-        @pos_info[log_file_name] = log.marker
+        @pos_info[log_file_name] = log.marker if should_track_marker?(log_file_name)
+
 
         raw_records += log.log_file_data.split("\n")
       end
@@ -260,6 +240,24 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
       router.emit(@tag, event_time_of_row(record), record) unless record.nil?
     rescue => e
       log.warn e.message
+    end
+  end
+  
+  def put_posfile
+    # pos file write
+    begin
+      log.debug "pos file write"
+      File.open(@pos_file, File::WRONLY|File::TRUNC) do |file|
+        log.debug "Writing pos file with timestamp=#{@pos_last_written_timestamp} and pos_info=#{@pos_info.inspect}"
+        @pos_info.delete_if { |file, _| !should_track_marker?(file) }
+        file.puts @pos_last_written_timestamp.to_s
+
+        @pos_info.each do |log_file_name, marker|
+          file.puts "#{log_file_name}\t#{marker}"
+        end
+      end
+    rescue => e
+      log.warn "pos file write error occurred: #{e.message}"
     end
   end
 

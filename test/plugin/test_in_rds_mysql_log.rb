@@ -56,7 +56,7 @@ class RdsMysqlLogInputTest < Test::Unit::TestCase
     aws_client_stub = Aws::RDS::Client.new(stub_responses: {
       describe_db_log_files: {
         describe_db_log_files: [
-          { log_file_name: 'server_audit.log', last_written: 123456789, size: 123 }
+          { log_file_name: 'audit/server_audit.log', last_written: 123456789, size: 123 }
         ],
         marker: 'old_marker'
       },
@@ -73,7 +73,7 @@ class RdsMysqlLogInputTest < Test::Unit::TestCase
     d.run(timeout: 3, expect_emits: 1)
     events = d.events
 
-    assert_equal(events[0][2]["log_file_name"], 'server_audit.log')
+    assert_equal(events[0][2]["log_file_name"], 'audit/server_audit.log')
     assert_equal(events[0][2]["message"], "UPDATE table SET id=123, updated_at=\'2025-04-03 19:38:08.681797\', is_weight_saved=1 WHERE table.id = 1234")
   end
 
@@ -85,7 +85,7 @@ class RdsMysqlLogInputTest < Test::Unit::TestCase
       describe_db_log_files: {
         describe_db_log_files: [
           {
-            log_file_name: 'error.log',
+            log_file_name: 'error/mysql-error-running.log',
             last_written: 123456789,
             size: 123
           }
@@ -108,7 +108,7 @@ class RdsMysqlLogInputTest < Test::Unit::TestCase
     
     events = d.events
     
-    assert_equal(events[0][2]["log_file_name"], 'error.log')
+    assert_equal(events[0][2]["log_file_name"], 'error/mysql-error-running.log')
     assert_equal(events[0][2]["message"], "IP address '1.2.3.4' could not be resolved: Name or service not known")
 
     # Ensure non-audit logs used `pos_last_written_timestamp`
@@ -118,30 +118,42 @@ class RdsMysqlLogInputTest < Test::Unit::TestCase
   def test_get_audit_log_files
     use_iam_role
     d = create_driver
-
+    first_log_line = "20250403 19:41:01,ip-1-1-1-1,service,1.2.3.4,12345678,1234567890,QUERY,test_db,'UPDATE table SET id=123, updated_at=\'2025-04-03 19:38:08.681797\', is_weight_saved=1 WHERE table.id = 1234',0,,"
+    second_log_line = "20250403 19:42:01,ip-1-1-1-1,service,1.2.3.4,12345678,1234567890,QUERY,test_db,'UPDATE table SET id=456, updated_at=\'2025-04-03 19:38:08.681797\', is_weight_saved=1 WHERE table.id = 5678',0,,"
+    
     aws_client_stub = Aws::RDS::Client.new(stub_responses: {
       describe_db_log_files: {
         describe_db_log_files: [
           {
-            log_file_name: 'server_audit.log',
+            log_file_name: 'audit/server_audit.log',
             last_written: Time.now.to_i,
             size: 123
           }
         ],
         marker: 'marker'
       },
-      download_db_log_file_portion: {
-        log_file_data: "20250403 19:41:01,ip-1-1-1-1,service,1.2.3.4,12345678,1234567890,QUERY,test_db,'UPDATE table SET id=123, updated_at=\'2025-04-03 19:38:08.681797\', is_weight_saved=1 WHERE table.id = 1234',0,,",
-        marker: 'marker',
-        additional_data_pending: false
-      }
+      download_db_log_file_portion: [
+        {
+          log_file_data: first_log_line,
+          marker: 'marker',
+          additional_data_pending: false
+        },
+        {
+          log_file_data: second_log_line,
+          marker: 'marker',
+          additional_data_pending: false
+        }
+      ]
     })
 
     d.instance.instance_variable_set(:@rds, aws_client_stub)
-    d.run(timeout: 3, expect_emits: 1)
+    d.run(timeout: 3, expect_emits: 2)
     
     events = d.events
-    assert_equal(events[0][2]["log_file_name"], 'server_audit.log')
+    assert_equal(2, events.size)
+    assert_equal(events[0][2]["log_file_name"], 'audit/server_audit.log')
     assert_equal(events[0][2]["message"], "UPDATE table SET id=123, updated_at=\'2025-04-03 19:38:08.681797\', is_weight_saved=1 WHERE table.id = 1234")
+    assert_equal(events[1][2]["log_file_name"], 'audit/server_audit.log')
+    assert_equal(events[1][2]["message"], "UPDATE table SET id=456, updated_at=\'2025-04-03 19:38:08.681797\', is_weight_saved=1 WHERE table.id = 5678")
   end
 end
