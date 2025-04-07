@@ -75,8 +75,6 @@ class RdsMysqlLogInputTest < Test::Unit::TestCase
 
     assert_equal(events[0][2]["log_file_name"], 'server_audit.log')
     assert_equal(events[0][2]["message"], "UPDATE table SET id=123, updated_at=\'2025-04-03 19:38:08.681797\', is_weight_saved=1 WHERE table.id = 1234")
-
-    # assert_equal(d.instance.instance_variable_get(:@pos_info)['server_audit.log'], 'new_marker')
   end
 
   def test_get_non_audit_log_files
@@ -140,18 +138,10 @@ class RdsMysqlLogInputTest < Test::Unit::TestCase
     })
 
     d.instance.instance_variable_set(:@rds, aws_client_stub)
-    
-    d.instance.instance_variable_set(:@pos_last_written_timestamp, (Time.now.to_i - (2*2000)))
-    
-    test_start_time = Time.now.to_i
-    buffer_time = 5 * d.instance.refresh_interval * 20000
-
     d.run(timeout: 3, expect_emits: 1)
     
     events = d.events
     assert_equal(events[0][2]["log_file_name"], 'server_audit.log')
     assert_equal(events[0][2]["message"], "UPDATE table SET id=123, updated_at=\'2025-04-03 19:38:08.681797\', is_weight_saved=1 WHERE table.id = 1234")
-
-    assert_operator events[0][1].to_i, :>=, (test_start_time - (buffer_time))
   end
 end

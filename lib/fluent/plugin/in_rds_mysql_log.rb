@@ -75,6 +75,10 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
       log.warn "EC2 Client error occurred: #{e.message}"
     end
   end
+  
+  def is_audit_logs?
+    @pos_info.keys.any? { |log_file_name| log_file_name =~ AUDIT_LOG_PATTERN }
+  end
 
   def get_and_parse_posfile
     begin
@@ -83,21 +87,28 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
 
       pos_last_written_timestamp = 0
       pos_info = {}
+
       File.open(@pos_file, File::RDONLY) do |file|
         file.each_line do |line|
+          
           pos_match = /^(\d+)$/.match(line)
           if pos_match
-            pos_last_written_timestamp = pos_match[1].to_i
+            pos_last_written_timestamp = pos_match[1].to_i 
             log.debug "pos_last_written_timestamp: #{pos_last_written_timestamp}"
           end
 
           pos_match = /^(.+)\t(.+)$/.match(line)
           if pos_match
-            pos_info[pos_match[1]] = pos_match[2]
-            p pos_info
+            if pos_match[1] =~ AUDIT_LOG_PATTERN
+              pos_info[pos_match[1]] = 0
+            else
+              pos_info[pos_match[1]] = pos_match[2]
+            end
+
             log.debug "log_file: #{pos_match[1]}, marker: #{pos_match[2]}"
           end
         end
+
         @pos_last_written_timestamp = pos_last_written_timestamp
         @pos_info = pos_info
       end
@@ -126,11 +137,7 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
     begin
       log.debug "get logfile-list from rds: db_instance_identifier=#{@db_instance_identifier}, pos_last_written_timestamp=#{@pos_last_written_timestamp}"
       
-      # Separate audit logs from other logs
-      
-      audit_logs_exist = @pos_info.keys.any? { |log_file_name| log_file_name =~ AUDIT_LOG_PATTERN }
-      
-      file_last_written = if audit_logs_exist
+      file_last_written = if is_audit_logs?
         # Use custom interval for audit logs
         (Time.now.to_i - @refresh_interval) * 1000
       else
@@ -155,9 +162,12 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
           # save maximum written timestamp value
           @pos_last_written_timestamp = item[:last_written] if @pos_last_written_timestamp < item[:last_written]
 
-          # log file download
-          log_file_name = item[:log_file_name]
-          marker = @pos_info[log_file_name] || "0"
+          log_file_name = item[:log_file_name]          
+          marker = if is_audit_logs?
+            "0"
+          else
+            @pos_info[log_file_name] || "0"
+          end
 
           log.debug "download log from rds: log_file_name=#{log_file_name}, marker=#{marker}"
           logs = @rds.download_db_log_file_portion(
