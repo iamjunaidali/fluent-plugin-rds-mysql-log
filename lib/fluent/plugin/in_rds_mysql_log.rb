@@ -81,13 +81,11 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
   end
   
   def should_track_marker?(log_file_name)
-    base_patterns = [
-      /^audit\/server_audit\.log(\.\d+)?$/,
-      /^general\/mysql-general\.log(\.\d+)?$/,
-      /^error\/mysql-error-running\.log(\.\d+)?$/
-    ]
-  
-    base_patterns.any? { |pattern| log_file_name =~ pattern }
+    return true if log_file_name == "audit/server_audit.log"
+    return true if log_file_name == "general/mysql-general.log"
+    return true if log_file_name == "error/mysql-error-running.log"
+    
+    false
   end
 
   def get_and_parse_posfile
@@ -129,13 +127,13 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
       if is_audit_logs?
         @rds.describe_db_log_files(
           db_instance_identifier: @db_instance_identifier,
-          max_records: 50,
+          max_records: 10
         )
       else
         @rds.describe_db_log_files(
           db_instance_identifier: @db_instance_identifier,
           file_last_written: @pos_last_written_timestamp,
-          max_records: 50,
+          max_records: 10,
         )
       end
     rescue => e
@@ -163,7 +161,7 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
           raw_records = get_logdata(logs)
 
           #emit
-          parse_and_emit(raw_records, log_file_name) unless raw_records.nil?
+          parse_and_emit(raw_records, log_file_name) unless raw_records&.empty?
         end
       end
     rescue => e
@@ -176,11 +174,12 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
     raw_records = []
     begin
       logs.each do |log|
-        # save got line's marker
-        @pos_info[log_file_name] = log.marker if should_track_marker?(log_file_name)
-
+        next if log.log_file_data.nil? || log.log_file_data.empty?
 
         raw_records += log.log_file_data.split("\n")
+      
+        # Update marker only if we actually got some data
+        @pos_info[log_file_name] = log.marker if should_track_marker?(log_file_name)
       end
     rescue => e
       log.warn e.message
