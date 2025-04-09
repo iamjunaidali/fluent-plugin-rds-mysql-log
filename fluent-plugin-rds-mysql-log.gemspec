@@ -5,12 +5,17 @@ $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 
 Gem::Specification.new do |spec|
   spec.name          = 'fluent-plugin-rds-mysql-log'
-  spec.version       = '0.1.6'
+  spec.version       = '0.1.7'
   spec.authors       = ['Junaid Ali']
   spec.email         = ['jonnie36@yahoo.com']
   spec.summary       = 'Amazon RDS Mysql logs input plugin'
   spec.description   = 'fluentd plugin for Amazon RDS Mysql logs input'
   spec.homepage      = 'https://github.com/iamjunaidali/fluent-plugin-rds-mysql-log.git'
+  
+  spec.metadata = {
+    "github_repo" => "ssh://github.com/iamjunaidali/fluent-plugin-rds-mysql-log"
+  }
+  
   spec.license       = 'MIT'
   spec.required_ruby_version = '>= 2.7.0'
 
