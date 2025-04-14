@@ -221,6 +221,7 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
               "message" => line_match[:query],
               "return_code" => line_match[:retcode],
               "log_file_name" => log_file_name,
+              "detected_level" => "info"
             }
           else
             record = {
