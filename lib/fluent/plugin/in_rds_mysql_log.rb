@@ -82,8 +82,6 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
   
   def should_track_marker?(log_file_name)
     return false if log_file_name == "audit/server_audit.log"
-    return false if log_file_name == "general/mysql-general.log"
-    return false if log_file_name == "error/mysql-error-running.log"
     
     true
   end
