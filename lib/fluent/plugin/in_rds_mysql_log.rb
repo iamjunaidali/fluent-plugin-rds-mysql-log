@@ -125,13 +125,13 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
       if is_audit_logs?
         @rds.describe_db_log_files(
           db_instance_identifier: @db_instance_identifier,
-          max_records: 10
+          max_records: 50
         )
       else
         @rds.describe_db_log_files(
           db_instance_identifier: @db_instance_identifier,
           file_last_written: @pos_last_written_timestamp,
-          max_records: 10,
+          max_records: 50,
         )
       end
     rescue => e
@@ -147,7 +147,11 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
           @pos_last_written_timestamp = item[:last_written] if @pos_last_written_timestamp < item[:last_written]
 
           log_file_name = item[:log_file_name]
-          marker = should_track_marker?(log_file_name) ? @pos_info[log_file_name] || "0" : "0"
+          marker = if should_track_marker?(log_file_name)
+                      @pos_info.has_key?(log_file_name) ? @pos_info[log_file_name] : "0"
+                   else 
+                      "0"
+                   end
 
           log.debug "download log from rds: log_file_name=#{log_file_name}, marker=#{marker}"
           logs = @rds.download_db_log_file_portion(
