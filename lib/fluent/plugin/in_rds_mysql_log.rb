@@ -147,11 +147,7 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
           @pos_last_written_timestamp = item[:last_written] if @pos_last_written_timestamp < item[:last_written]
 
           log_file_name = item[:log_file_name]
-          marker = if should_track_marker?(log_file_name)
-                      @pos_info.has_key?(log_file_name) ? @pos_info[log_file_name] : "0"
-                   else 
-                      "0"
-                   end
+          marker = should_track_marker?(log_file_name) ? @pos_info[log_file_name] || "0" : "0"
 
           log.debug "download log from rds: log_file_name=#{log_file_name}, marker=#{marker}"
           logs = @rds.download_db_log_file_portion(
