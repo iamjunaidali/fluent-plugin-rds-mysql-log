@@ -8,7 +8,6 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
   helpers :timer
 
   LOG_REGEXP = /^(?:(?<audit_logs>(?<timestamp>(\d{8})\s(\d{2}:\d{2}:\d{2})?),(?<serverhost>[^,]+?),(?<username>[^,]+?),(?<host>[^,]+?),(?<connectionid>[^,]+?),(?<queryid>[^,]+?),(?<operation>[^,]+?),(?<database>[^,]+?),'(?<query>.*?)',(?<retcode>[0-9]?),(?:,)?)|(?<other_logs>(?<time>(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}\.\d+Z)?)\s(?<thread_id>\d+?)\s\[(?<severity>([^\]]+)?)\]\s\[(?<error_code>([^\]]+)?)\]\s\[(?<subsystem>([^\]]+)?)\]\s((?<message>.+)?)))$/m
-  AUDIT_LOG_PATTERN = /server_audit\.log(\.\d+)?$/i
 
   config_param :access_key_id, :string, :default => nil
   config_param :secret_access_key, :string, :default => nil
@@ -76,10 +75,6 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
     end
   end
   
-  def is_audit_logs?
-    @pos_info.keys.any? { |log_file_name| log_file_name =~ AUDIT_LOG_PATTERN }
-  end
-  
   def should_track_marker?(log_file_name)
     return false if log_file_name == "audit/server_audit.log"
     
@@ -122,18 +117,11 @@ class Fluent::Plugin::RdsMysqlLogInput < Fluent::Plugin::Input
     begin
       log.debug "get logfile-list from rds: db_instance_identifier=#{@db_instance_identifier}, pos_last_written_timestamp=#{@pos_last_written_timestamp}"
       
-      if is_audit_logs?
-        @rds.describe_db_log_files(
-          db_instance_identifier: @db_instance_identifier,
-          max_records: 50
-        )
-      else
-        @rds.describe_db_log_files(
-          db_instance_identifier: @db_instance_identifier,
-          file_last_written: @pos_last_written_timestamp,
-          max_records: 50,
-        )
-      end
+      @rds.describe_db_log_files(
+        db_instance_identifier: @db_instance_identifier,
+        file_last_written: @pos_last_written_timestamp,
+        max_records: 10,
+      )
     rescue => e
       log.warn "RDS Client describe_db_log_files error occurred: #{e.message}"
     end
